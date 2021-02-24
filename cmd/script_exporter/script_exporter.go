@@ -1,6 +1,7 @@
 // Script_exporter is a Prometheus exporter to execute programs and
-// scripts and collect metrics from their output and their exit
-// status.
+// scripts and collect metrics from their output and their exit status.
+// Modified for virtimo by tk 2021
+
 package main
 
 import (
@@ -28,10 +29,15 @@ import (
 
 const (
 	namespace                 = "script"
-	scriptSuccessHelp         = "# HELP script_success Script exit status (0 = error, 1 = success)."
-	scriptSuccessType         = "# TYPE script_success gauge"
-	scriptDurationSecondsHelp = "# HELP script_duration_seconds Script execution time, in seconds."
-	scriptDurationSecondsType = "# TYPE script_duration_seconds gauge"
+	scriptGeneralHelp         = "# virtimo script-exporter, author TK, modified to deliver status codes and format for grafana status map."
+	scriptStatusmapHelp       = "# HELP script_statusmap Script exit status as label status with value always 1 for grafana statusmap-plugin."
+        scriptStatusmapType       = "# TYPE script_statusmap gauge"
+        scriptReturncodeHelp      = "# HELP script_returncode Script exit status (0 = ok, != 0 any exit code)."
+        scriptReturncodeType      = "# TYPE script_returncode gauge"
+        scriptSuccessHelp         = "# HELP script_success Script success status (1 = ok, 0 error)."
+        scriptSuccessType         = "# TYPE script_success gauge"
+        scriptDurationSecondsHelp = "# HELP script_duration_seconds Script execution time, in seconds."
+        scriptDurationSecondsType = "# TYPE script_duration_seconds gauge"
 )
 
 var (
@@ -208,18 +214,23 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 	// query parameter, clamped to a maximum specified through the
 	// configuration file.
 	timeout := getTimeout(r, *timeoutOffset, exporterConfig.GetMaxTimeout(scriptName))
+        retCode := 0
 
 	output, err := runScript(timeout, exporterConfig.GetTimeoutEnforced(scriptName), append(strings.Split(script, " "), paramValues...))
 	if err != nil {
 		log.Printf("Script failed: %s\n", err.Error())
-		fmt.Fprintf(w, "%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n", scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 0, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds())
+		retCodeRegexp := regexp.MustCompile("^(.*exit status )([0-9]*)(.*)$")
+                retCodeStr := retCodeRegexp.ReplaceAllString(err.Error(), "$2")
+                log.Printf("Returncode: %s\n", retCodeStr)
+                retCode, _ := strconv.Atoi(retCodeStr)
+		fmt.Fprintf(w, "%s\n%s\n%s\n%s_statusmap{script=\"%s\", status=\"%d\"} %d\n%s\n%s\n%s_returncode{script=\"%s\"} %d\n%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n", scriptGeneralHelp, scriptStatusmapHelp, scriptStatusmapType, namespace, scriptName, retCode, 1, scriptReturncodeHelp, scriptReturncodeType, namespace, scriptName, retCode, scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 0, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds())
 		return
 	}
 
 	// Get ignore output parameter and only return success and duration seconds if 'true'
 	outputParam := params.Get("output")
 	if outputParam == "ignore" {
-		fmt.Fprintf(w, "%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n", scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 1, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds())
+		fmt.Fprintf(w, "%s\n%s\n%s\n%s_statusmap{script=\"%s\", status=\"%d\"} %d\n%s\n%s\n%s_returncode{script=\"%s\"} %d\n%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n", scriptGeneralHelp, scriptStatusmapHelp, scriptStatusmapType, namespace, scriptName, retCode, 1, scriptReturncodeHelp, scriptReturncodeType, namespace, scriptName, retCode, scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 1, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds())
 		return
 	}
 
@@ -253,7 +264,7 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fmt.Fprintf(w, "%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n%s\n", scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 1, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds(), formatedOutput)
+	fmt.Fprintf(w, "%s\n%s\n%s\n%s_statusmap{script=\"%s\", status=\"%d\"} %d\n%s\n%s\n%s_returncode{script=\"%s\"} %d\n%s\n%s\n%s_success{script=\"%s\"} %d\n%s\n%s\n%s_duration_seconds{script=\"%s\"} %f\n%s\n", scriptGeneralHelp, scriptStatusmapHelp, scriptStatusmapType, namespace, scriptName, retCode, 1, scriptReturncodeHelp, scriptReturncodeType, namespace, scriptName, retCode, scriptSuccessHelp, scriptSuccessType, namespace, scriptName, 1, scriptDurationSecondsHelp, scriptDurationSecondsType, namespace, scriptName, time.Since(scriptStartTime).Seconds(), formatedOutput)
 }
 
 // setupMetrics creates and registers our internal Prometheus metrics,
@@ -386,7 +397,7 @@ func main() {
 	router.Handle("/metrics", promhttp.Handler())
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
-		<head><title>Script Exporter</title></head>
+		<head><title>Virtimo Script Exporter</title></head>
 		<body>
 		<h1>Script Exporter</h1>
 		<p><a href='/metrics'>Metrics</a></p>
@@ -453,3 +464,4 @@ func main() {
 		log.Fatalln(server.ListenAndServe())
 	}
 }
+
