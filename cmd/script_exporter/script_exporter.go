@@ -1,6 +1,5 @@
 // Script_exporter is a Prometheus exporter to execute programs and
 // scripts and collect metrics from their output and their exit status.
-// Modified for virtimo by tk 2021
 
 package main
 
@@ -29,7 +28,7 @@ import (
 
 const (
 	namespace                 = "script"
-	scriptGeneralHelp         = "# virtimo script-exporter, author TK, modified to deliver status codes and format for grafana status map."
+	scriptGeneralHelp         = "# script-exporter, modified to deliver status codes and format for grafana status map."
 	scriptStatusmapHelp       = "# HELP script_statusmap Script exit status as label status with value always 1 for grafana statusmap-plugin."
         scriptStatusmapType       = "# TYPE script_statusmap gauge"
         scriptReturncodeHelp      = "# HELP script_returncode Script exit status (0 = ok, != 0 any exit code)."
@@ -397,7 +396,7 @@ func main() {
 	router.Handle("/metrics", promhttp.Handler())
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
-		<head><title>Virtimo Script Exporter</title></head>
+		<head><title>Script Exporter</title></head>
 		<body>
 		<h1>Script Exporter</h1>
 		<p><a href='/metrics'>Metrics</a></p>
